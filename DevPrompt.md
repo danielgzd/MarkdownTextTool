@@ -13,7 +13,7 @@
 - 云端文件：通过 Files / iCloud Drive 的系统文档能力访问
 - 导出：HTML 和 PDF
 - 主题：跟随系统亮/暗模式，并支持用户选择外观、强调色、字体和字号
-- 自动化：GitHub Actions 运行冒烟测试，构建 macOS DMG、iOS 无签名归档，并在配置签名后生成 IPA
+- 自动化：GitHub Actions 运行冒烟测试，构建 macOS DMG、iOS/iPadOS 无签名 IPA，并在配置签名后生成签名 IPA
 
 ## 2. 技术选型
 
@@ -79,7 +79,7 @@ macOS DMG：
 bash scripts/build-macos.sh
 ```
 
-iOS 无签名归档：
+iOS/iPadOS 无签名 IPA 和归档：
 
 ```bash
 bash scripts/build-ios-unsigned.sh
@@ -102,13 +102,14 @@ bash scripts/build-ios-signed.sh
 工作流位于 `.github/workflows/build.yml`。默认流程：
 
 - pull request：运行 smoke
-- main push：运行 smoke 和构建
+- 任意分支 push：运行 smoke，构建 macOS DMG 和 iOS/iPadOS 无签名 IPA artifact
 - tag push：运行 smoke、构建、创建 GitHub Release
 - 签名变量启用后：额外导出签名 IPA
 
 Release 资产：
 
 - `MarkdownTextTool-macOS-unsigned.dmg`
+- `MarkdownTextTool-iOS-iPadOS-unsigned.ipa`
 - `MarkdownTextTool-iOS-signed.ipa`，仅在签名配置存在时生成
 
 ## 7. 发布准备
@@ -134,6 +135,6 @@ git push origin v1.0.0
 ## 8. 已知限制
 
 - macOS DMG 是 ad-hoc 签名的开发包，未做 Developer ID 签名和 notarization。
-- 未配置 Apple 签名材料时，CI 不会生成可安装 iOS IPA。
+- 未配置 Apple 签名材料时，CI 会生成无签名 IPA，但该文件不能直接安装到物理 iPhone/iPad。
 - LaTeX 数学公式未默认启用，可后续接入 KaTeX 或 MathJax 的 HTML/PDF 渲染路径。
 - `MarkdownCore` 的 HTML 导出覆盖常用 Markdown 语法；编辑器实时预览由 MarkdownUI 提供更完整的 GFM 渲染。

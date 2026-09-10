@@ -12,7 +12,7 @@ MarkdownTextTool 是一套原生 SwiftUI Markdown 文本工具，面向 iOS 15+�
 - 通过系统 Files / iCloud Drive 文档能力打开云端文件
 - HTML 和 PDF 导出
 - 亮色、暗色、系统外观，以及字体大小和编辑字体偏好
-- GitHub Actions 冒烟测试、macOS DMG 构建、iOS 无签名归档和可选签名 IPA
+- GitHub Actions 冒烟测试、macOS DMG 构建、iOS/iPadOS 无签名 IPA 和可选签名 IPA
 
 ## 本地开发
 
@@ -62,7 +62,7 @@ bash scripts/build-macos.sh
 build/MarkdownTextTool-macOS-unsigned.dmg
 ```
 
-iOS 无签名归档：
+iOS/iPadOS 无签名 IPA 和归档：
 
 ```bash
 bash scripts/build-ios-unsigned.sh
@@ -71,10 +71,11 @@ bash scripts/build-ios-unsigned.sh
 输出文件：
 
 ```text
+build/MarkdownTextTool-iOS-iPadOS-unsigned.ipa
 build/MarkdownTextTool-iOS-unsigned.xcarchive.zip
 ```
 
-该归档用于 CI 构建验证，不是可安装 IPA。
+该 IPA 和归档用于 CI 构建验证。无证书 IPA 不能直接安装到物理 iPhone/iPad；真机安装仍需要 Apple 签名。
 
 ## iOS 签名 IPA
 
@@ -99,7 +100,7 @@ IOS_BUNDLE_ID
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` 会在 pull request、main 分支 push、tag push 和手动触发时运行。tag 以 `v` 开头时会创建 GitHub Release，并上传 macOS DMG；如果 iOS 签名配置存在，还会上传签名 IPA。
+`.github/workflows/build.yml` 会在 pull request、任意分支 push、tag push 和手动触发时运行。每次 push 都会构建 iOS/iPadOS 无签名 IPA 并上传到 Actions artifact。tag 以 `v` 开头时会创建 GitHub Release，并上传 macOS DMG 和无签名 iOS/iPadOS IPA；如果 iOS 签名配置存在，还会上传签名 IPA。
 
 ## 说明
 

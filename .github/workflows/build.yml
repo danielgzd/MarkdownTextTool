@@ -3,7 +3,7 @@ name: Smoke, Build and Release
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
   workflow_dispatch:
 
@@ -33,7 +33,7 @@ jobs:
         run: bash scripts/smoke.sh
 
   build-ios:
-    name: iOS unsigned archive
+    name: iOS/iPadOS unsigned IPA
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -44,12 +44,14 @@ jobs:
       - run: bash scripts/build-ios-unsigned.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: build-iOS-unsigned-archive
-          path: build/MarkdownTextTool-iOS-unsigned.xcarchive.zip
+          name: release-iOS-iPadOS-unsigned
+          path: |
+            build/MarkdownTextTool-iOS-iPadOS-unsigned.ipa
+            build/MarkdownTextTool-iOS-unsigned.xcarchive.zip
           if-no-files-found: error
           retention-days: 7
       - name: Explain archive status
-        run: echo 'The unsigned iOS archive is a build artifact, not an installable IPA.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'The unsigned iOS/iPadOS IPA is a build artifact. Physical devices still require Apple signing to install.' >> "$GITHUB_STEP_SUMMARY"
 
   build-macos:
     name: macOS universal development DMG
@@ -126,7 +128,7 @@ jobs:
 
           The universal macOS DMG has an ad-hoc signature only; it is not Developer ID signed or notarized. Gatekeeper may prevent opening a downloaded copy.
 
-          A signed iOS IPA is included only when the repository has configured signing. An Ad Hoc (`release-testing`) IPA installs only on devices registered in its provisioning profile. An App Store (`app-store-connect`) IPA is for App Store Connect upload and cannot be directly installed. Unsigned iOS archives remain in Actions artifacts and are not installable packages.
+          An unsigned iOS/iPadOS IPA is included as a build artifact for inspection. Physical devices still require Apple signing to install. A signed iOS IPA is included only when the repository has configured signing. An Ad Hoc (`release-testing`) IPA installs only on devices registered in its provisioning profile. An App Store (`app-store-connect`) IPA is for App Store Connect upload and cannot be directly installed.
           NOTES
           shopt -s nullglob
           assets=(release/*.dmg release/*.ipa)
