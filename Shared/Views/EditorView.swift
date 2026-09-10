@@ -5,22 +5,33 @@ import MarkdownCore
 struct EditorView: View {
     @Binding var document: MarkdownDocument
     let fileURL: URL?
+    let showsFolderButton: Bool
     @StateObject private var model = EditorViewModel()
     @StateObject private var pdfExporter = PDFExporter()
     @State private var mode: EditorMode = .split
     @State private var showSettings = false
+    @State private var showFolderWorkspace = false
+    @State private var showImageImporter = false
     @State private var showExporter = false
     @State private var exportedDocument: ExportDocument?
     @State private var exportedType: UTType = .html
     @State private var exporting = false
     @State private var exportTask: Task<Void, Never>?
     @State private var errorMessage: String?
+    @State private var editorSelection = NSRange(location: 0, length: 0)
+    @State private var editorScrollProgress = 0.0
     @AppStorage("fontSize") private var fontSize = 16.0
     @AppStorage("editorFont") private var editorFont = EditorTypeface.monospaced.rawValue
     @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
     @FocusState private var editorFocused: Bool
 
     private var documentName: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未命名" }
+
+    init(document: Binding<MarkdownDocument>, fileURL: URL?, showsFolderButton: Bool = true) {
+        self._document = document
+        self.fileURL = fileURL
+        self.showsFolderButton = showsFolderButton
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +54,16 @@ struct EditorView: View {
                 }
                 .disabled(exporting)
                 .help("导出当前文档")
+                Button { showImageImporter = true } label: {
+                    Label("插入图片", systemImage: "photo.badge.plus")
+                }
+                .help("复制图片资源并插入 Markdown 引用")
+                if showsFolderButton {
+                    Button { showFolderWorkspace = true } label: {
+                        Label("文件夹模式", systemImage: "folder")
+                    }
+                    .help("打开文件夹工作区")
+                }
                 Button { showSettings = true } label: {
                     Label("写作偏好", systemImage: "slider.horizontal.3")
                 }
@@ -64,6 +85,15 @@ struct EditorView: View {
                     .padding(.bottom, 20)
             }
             #endif
+        }
+        .sheet(isPresented: $showFolderWorkspace) {
+            FolderWorkspaceView()
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+        }
+        .fileImporter(isPresented: $showImageImporter,
+                      allowedContentTypes: [.image],
+                      allowsMultipleSelection: true) { result in
+            handleImageImport(result)
         }
         .fileExporter(isPresented: $showExporter, document: exportedDocument,
                       contentType: exportedType, defaultFilename: documentName) { result in
@@ -137,11 +167,13 @@ struct EditorView: View {
     private var editorPane: some View {
         VStack(spacing: 0) {
             paneHeading("编辑", detail: "MARKDOWN", symbol: "square.and.pencil")
+            formattingBar
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $document.text)
-                    .font(.system(size: fontSize, design: (EditorTypeface(rawValue: editorFont) ?? .monospaced).design))
-                    .lineSpacing(6)
-                    .padding(16)
+                MarkdownTextEditor(text: $document.text,
+                                   selection: $editorSelection,
+                                   scrollProgress: $editorScrollProgress,
+                                   fontSize: fontSize,
+                                   typeface: EditorTypeface(rawValue: editorFont) ?? .monospaced)
                     .focused($editorFocused)
                     .accessibilityLabel("Markdown 编辑区")
                     .accessibilityIdentifier("markdownEditor")
@@ -193,10 +225,43 @@ struct EditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.editorCanvas)
             } else {
-                PreviewView(content: model.preview,
-                            baseURL: fileURL?.deletingLastPathComponent(), fontSize: fontSize)
+                SyncedMarkdownPreview(content: model.preview,
+                                      baseURL: fileURL?.deletingLastPathComponent(),
+                                      fontSize: fontSize,
+                                      scrollProgress: editorScrollProgress)
             }
         }
+    }
+
+    private var formattingBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                formatButton("H1", "textformat.size") { insertLinePrefix("# ") }
+                formatButton("H2", "textformat.size.smaller") { insertLinePrefix("## ") }
+                formatButton("粗体", "bold") { wrapSelection(prefix: "**", suffix: "**", placeholder: "重点文字") }
+                formatButton("斜体", "italic") { wrapSelection(prefix: "*", suffix: "*", placeholder: "强调文字") }
+                formatButton("下划线", "underline") { wrapSelection(prefix: "<u>", suffix: "</u>", placeholder: "下划线文字") }
+                formatButton("引用", "text.quote") { insertLinePrefix("> ") }
+                formatButton("列表", "list.bullet") { insertLinePrefix("- ") }
+                formatButton("任务", "checklist") { insertLinePrefix("- [ ] ") }
+                formatButton("代码", "curlybraces") { insertBlock("```swift\n", "\n```", placeholder: "let value = \"Hello\"") }
+                formatButton("表格", "tablecells") { insertTable() }
+                formatButton("链接", "link") { wrapSelection(prefix: "[", suffix: "](https://)", placeholder: "链接文字") }
+                formatButton("图片", "photo") { showImageImporter = true }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(Color.workspaceChrome.opacity(0.45))
+    }
+
+    private func formatButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.borderless)
+        .help(title)
     }
 
     private func paneHeading(_ title: String, detail: String, symbol: String) -> some View {
@@ -255,5 +320,101 @@ struct EditorView: View {
                 // Closing a document cancels its pending export.
             } catch { errorMessage = error.localizedDescription }
         }
+    }
+
+    private func selectedText() -> String {
+        let source = document.text as NSString
+        let range = clampedSelection(in: source)
+        guard range.length > 0 else { return "" }
+        return source.substring(with: range)
+    }
+
+    private func replaceSelection(with replacement: String, cursorOffset: Int? = nil) {
+        let source = document.text as NSString
+        let range = clampedSelection(in: source)
+        document.text = source.replacingCharacters(in: range, with: replacement)
+        let location = range.location + (cursorOffset ?? replacement.utf16.count)
+        editorSelection = NSRange(location: min(location, (document.text as NSString).length), length: 0)
+        editorFocused = true
+    }
+
+    private func wrapSelection(prefix: String, suffix: String, placeholder: String) {
+        let selected = selectedText()
+        let content = selected.isEmpty ? placeholder : selected
+        replaceSelection(with: prefix + content + suffix, cursorOffset: prefix.utf16.count + content.utf16.count)
+    }
+
+    private func insertBlock(_ prefix: String, _ suffix: String, placeholder: String) {
+        let selected = selectedText()
+        let content = selected.isEmpty ? placeholder : selected
+        let block = prefix + content + suffix
+        replaceSelection(with: block, cursorOffset: prefix.utf16.count + content.utf16.count)
+    }
+
+    private func insertLinePrefix(_ prefix: String) {
+        let source = document.text as NSString
+        let range = clampedSelection(in: source)
+        let lineRange = source.lineRange(for: NSRange(location: range.location, length: 0))
+        let lineStart = lineRange.location
+        document.text = source.replacingCharacters(in: NSRange(location: lineStart, length: 0), with: prefix)
+        editorSelection = NSRange(location: range.location + prefix.utf16.count, length: range.length)
+        editorFocused = true
+    }
+
+    private func insertTable() {
+        replaceSelection(with: """
+
+        | 列 1 | 列 2 |
+        | --- | --- |
+        | 内容 | 内容 |
+
+        """)
+    }
+
+    private func handleImageImport(_ result: Result<[URL], Error>) {
+        do {
+            let urls = try result.get()
+            guard !urls.isEmpty else { return }
+            let snippets = try urls.map(insertableImageMarkdown)
+            replaceSelection(with: snippets.joined(separator: "\n"))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func insertableImageMarkdown(for sourceURL: URL) throws -> String {
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let documentFolder = fileURL?.deletingLastPathComponent() else {
+            return "![\(sourceURL.deletingPathExtension().lastPathComponent)](\(sourceURL.lastPathComponent))"
+        }
+
+        let imagesFolder = documentFolder.appendingPathComponent("Images", isDirectory: true)
+        try FileManager.default.createDirectory(at: imagesFolder, withIntermediateDirectories: true)
+        let target = uniqueImageURL(for: sourceURL.lastPathComponent, in: imagesFolder)
+        try FileManager.default.copyItem(at: sourceURL, to: target)
+        return "![\(target.deletingPathExtension().lastPathComponent)](Images/\(target.lastPathComponent))"
+    }
+
+    private func uniqueImageURL(for fileName: String, in folder: URL) -> URL {
+        let base = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
+        let ext = URL(fileURLWithPath: fileName).pathExtension
+        var candidate = folder.appendingPathComponent(fileName)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            let name = ext.isEmpty ? "\(base)-\(counter)" : "\(base)-\(counter).\(ext)"
+            candidate = folder.appendingPathComponent(name)
+            counter += 1
+        }
+        return candidate
+    }
+
+    private func clampedSelection(in source: NSString) -> NSRange {
+        let location = min(max(editorSelection.location, 0), source.length)
+        let length = min(max(editorSelection.length, 0), source.length - location)
+        return NSRange(location: location, length: length)
     }
 }

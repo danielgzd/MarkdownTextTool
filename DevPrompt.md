@@ -6,10 +6,12 @@
 ## 1. 需求定义
 
 - 平台：iOS 15+、iPadOS 15+、macOS 12+
-- 编辑体验：纯文本编辑区、实时预览、分栏布局、全屏阅读布局
+- 编辑体验：纯文本编辑区、实时预览、分栏布局、全屏阅读布局、分栏滚动同步
 - Markdown：标题、列表、任务列表、引用、表格、代码块、图片链接、普通链接
 - 代码高亮：内置 Swift 代码块基础高亮
 - 文件：系统文档打开/保存，支持 `.md`、`.markdown`
+- 文件夹：文件夹工作区可选择 Markdown 文件、自动保存，并支持在当前文件夹内管理图片资源
+- 功能区：提供标题、粗体、斜体、下划线、引用、列表、任务、代码块、表格、链接、图片等常用操作
 - 云端文件：通过 Files / iCloud Drive 的系统文档能力访问
 - 导出：HTML 和 PDF
 - 主题：跟随系统亮/暗模式，并支持用户选择外观、强调色、字体和字号
@@ -51,13 +53,15 @@ MarkdownTextTool/
 
 应用入口使用 `DocumentGroup(newDocument:)`，让系统负责新建、打开、保存和 iCloud Drive 文件接入。`MarkdownDocument` 声明 `net.daringfireball.markdown`，并在 iOS/macOS Info.plist 中导入 `.md`、`.markdown` 扩展。
 
-主界面由 `EditorView` 负责，提供三种布局：
+主界面由 `EditorView` 负责，提供三种布局和一组常用 Markdown 工具按钮：
 
 - 编辑：只显示 `TextEditor`
 - 分栏：宽屏横向分栏，窄屏上下分栏
 - 阅读：只显示实时预览
 
-预览由 `PreviewView` 使用 MarkdownUI 渲染，并接入 `NativeSyntaxHighlighter`。导出由 `EditorView` 调用 `MarkdownRenderer.html` 生成 HTML，再交给 `PDFExporter` 生成 PDF。
+预览由 `SyncedMarkdownPreview` 使用 MarkdownUI 渲染，并接入 `NativeSyntaxHighlighter`。导出由 `EditorView` 调用 `MarkdownRenderer.html` 生成 HTML，再交给 `PDFExporter` 生成 PDF。
+
+文件夹模式由 `FolderWorkspaceView` 负责。用户选择文件夹后，侧边栏递归列出 `.md` 和 `.markdown` 文件；选择文件会加载到编辑器，修改后自动写回。插入图片时，应用会把图片复制到当前 Markdown 文件旁的 `Images/` 目录，并插入相对路径引用。
 
 ## 5. 本地命令
 

@@ -6,6 +6,10 @@ MarkdownTextTool 是一套原生 SwiftUI Markdown 文本工具，面向 iOS 15+�
 
 - 纯文本 Markdown 编辑区
 - 编辑、分栏、阅读三种布局
+- 分栏模式下编辑区滚动会同步驱动预览区滚动
+- 文件夹工作区，可打开文件夹、选择 Markdown 文件并自动保存
+- 常用语法功能区，支持标题、粗体、斜体、下划线、引用、列表、任务、代码块、表格、链接和图片
+- 图片导入会复制到当前文档旁的 `Images/` 文件夹并自动插入 Markdown 引用
 - 实时 Markdown 预览，支持标题、列表、引用、表格、代码块、图片和链接
 - Swift 代码块基础语法高亮
 - 系统文档打开/保存，支持 `.md` 和 `.markdown`
@@ -101,6 +105,10 @@ IOS_BUNDLE_ID
 ## GitHub Actions
 
 `.github/workflows/build.yml` 会在 pull request、任意分支 push、tag push 和手动触发时运行。每次 push 都会构建 iOS/iPadOS 无签名 IPA 并上传到 Actions artifact。tag 以 `v` 开头时会创建 GitHub Release，并上传 macOS DMG 和无签名 iOS/iPadOS IPA；如果 iOS 签名配置存在，还会上传签名 IPA。
+
+## 图标
+
+App Icon 源图位于 `Shared/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png`，并已切分为 iPhone、iPad 和 macOS 需要的尺寸。
 
 ## 说明
 
