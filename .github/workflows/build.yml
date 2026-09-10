@@ -1,0 +1,142 @@
+name: Smoke, Build and Release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # Explicitly choose an SDK/toolchain present on GitHub's macos-15 image.
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+jobs:
+  smoke:
+    name: Smoke and simulator builds
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install project generator
+        run: brew install xcodegen
+      - name: Smoke tests and macOS/iOS Simulator builds
+        run: bash scripts/smoke.sh
+
+  build-ios:
+    name: iOS unsigned archive
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: brew install xcodegen
+      - run: bash scripts/build-ios-unsigned.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-iOS-unsigned-archive
+          path: build/MarkdownTextTool-iOS-unsigned.xcarchive.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Explain archive status
+        run: echo 'The unsigned iOS archive is a build artifact, not an installable IPA.' >> "$GITHUB_STEP_SUMMARY"
+
+  build-macos:
+    name: macOS universal development DMG
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: brew install xcodegen
+      - run: bash scripts/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macOS
+          path: build/MarkdownTextTool-macOS-unsigned.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-ios:
+    name: Optional signed iOS IPA
+    if: startsWith(github.ref, 'refs/tags/') && vars.IOS_SIGNING_ENABLED == 'true'
+    needs: smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+      IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+      IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+      IOS_EXPORT_METHOD: ${{ vars.IOS_EXPORT_METHOD || 'release-testing' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: brew install xcodegen
+      - name: Import, archive, export and clean temporary signing assets
+        run: bash scripts/build-ios-signed.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-iOS
+          path: build/MarkdownTextTool-iOS-signed.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish tagged release
+    needs: [smoke, build-ios, build-macos, sign-ios]
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/') &&
+      needs.smoke.result == 'success' &&
+      needs.build-ios.result == 'success' &&
+      needs.build-macos.result == 'success' &&
+      (needs.sign-ios.result == 'success' || needs.sign-ios.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Create release and upload available assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          Native Markdown editor for iOS 15+, iPadOS 15+ and macOS 12+.
+
+          The universal macOS DMG has an ad-hoc signature only; it is not Developer ID signed or notarized. Gatekeeper may prevent opening a downloaded copy.
+
+          A signed iOS IPA is included only when the repository has configured signing. An Ad Hoc (`release-testing`) IPA installs only on devices registered in its provisioning profile. An App Store (`app-store-connect`) IPA is for App Store Connect upload and cannot be directly installed. Unsigned iOS archives remain in Actions artifacts and are not installable packages.
+          NOTES
+          shopt -s nullglob
+          assets=(release/*.dmg release/*.ipa)
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo 'No release assets were downloaded.' >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag --title "$RELEASE_TAG" --notes-file release-notes.md
+          fi

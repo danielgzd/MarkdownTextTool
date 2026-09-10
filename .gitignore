@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+.tools/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.dmg
+*.xcarchive/
+*.p12
+*.mobileprovision
+*.keychain-db
+ExportOptions.plist
+# Keep the generated project and its shared Package.resolved in source control.
