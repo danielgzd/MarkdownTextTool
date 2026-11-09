@@ -27,8 +27,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Install project generator
-        run: brew install xcodegen
+      - name: Restore or install project generator
+        uses: ./.github/actions/setup-xcodegen
       - name: Smoke tests and macOS/iOS Simulator builds
         run: bash scripts/smoke.sh
 
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: brew install xcodegen
+      - uses: ./.github/actions/setup-xcodegen
       - run: bash scripts/build-ios-unsigned.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: brew install xcodegen
+      - uses: ./.github/actions/setup-xcodegen
       - run: bash scripts/build-macos.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: brew install xcodegen
+      - uses: ./.github/actions/setup-xcodegen
       - name: Import, archive, export and clean temporary signing assets
         run: bash scripts/build-ios-signed.sh
       - uses: actions/upload-artifact@v4

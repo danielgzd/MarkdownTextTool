@@ -1,0 +1,46 @@
+name: Cached XcodeGen
+description: Reuse XcodeGen when its formula, OS image and architecture match.
+runs:
+  using: composite
+  steps:
+    - name: Identify XcodeGen formula
+      id: formula
+      shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: '1'
+      run: |
+        brew info --json=v2 xcodegen > "$RUNNER_TEMP/xcodegen-formula.json"
+        python3 - <<'PYTHON'
+        import json, os
+        with open(os.environ['RUNNER_TEMP'] + '/xcodegen-formula.json') as stream:
+            formula = json.load(stream)['formulae'][0]
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+            print('version=' + formula['versions']['stable'] + '-' + str(formula['revision']), file=stream)
+            print('image=' + os.environ.get('ImageVersion', 'unknown'), file=stream)
+        PYTHON
+    - name: Restore XcodeGen installation
+      id: tool-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/xcodegen-tool
+        key: xcodegen-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.formula.outputs.image }}-${{ steps.formula.outputs.version }}-end
+    - name: Install XcodeGen on cache miss
+      if: steps.tool-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: '1'
+      run: |
+        brew install xcodegen
+        mkdir -p "$RUNNER_TEMP/xcodegen-tool"
+        cp -R "$(brew --prefix xcodegen)/." "$RUNNER_TEMP/xcodegen-tool/"
+    - name: Verify and activate XcodeGen
+      shell: bash
+      run: |
+        "$RUNNER_TEMP/xcodegen-tool/bin/xcodegen" --version
+        echo "$RUNNER_TEMP/xcodegen-tool/bin" >> "$GITHUB_PATH"
+    - name: Save XcodeGen installation
+      if: steps.tool-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/xcodegen-tool
+        key: ${{ steps.tool-cache.outputs.cache-primary-key }}
